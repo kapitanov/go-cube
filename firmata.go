@@ -1,6 +1,8 @@
 package cube
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -28,6 +30,7 @@ const (
 type firmata interface {
 	PinMode(pin int, mode pinMode) error
 	DigitalWrite(pin int, value bool) error
+	Close() error
 }
 
 type firmataImpl struct {
@@ -35,7 +38,44 @@ type firmataImpl struct {
 	digitalOutData []int
 }
 
+func findSerialPort() (string, error) {
+	for i := 12; i > 0; i-- {
+		port := fmt.Sprintf("COM%d", i)
+
+		serialConfig := &serial.Config{
+			Name:     port,
+			Baud:     baudRate,
+			Parity:   serial.ParityNone,
+			StopBits: serial.Stop1,
+		}
+
+		serialPort, err := serial.OpenPort(serialConfig)
+		if err != nil {
+			continue
+		}
+
+		serialPort.Close()
+		return port, nil
+	}
+
+	return "", errors.New("Unable to auto-detect COM port")
+}
+
+const autoDetectPort = "AUTO"
+
 func newFirmata(port string) (firmata, error) {
+	if port == autoDetectPort {
+		trace.Printf("Detecting Cube port...")
+		autoPort, err := findSerialPort()
+		if err != nil {
+			trace.Printf("Unable to auto detect port")
+			return nil, err
+		}
+
+		trace.Printf("Detected Cube port is %s", autoPort)
+		port = autoPort
+	}
+
 	serialConfig := &serial.Config{
 		Name:     port,
 		Baud:     baudRate,
@@ -49,7 +89,6 @@ func newFirmata(port string) (firmata, error) {
 		return nil, err
 	}
 
-	trace.Printf("Port %s is open", port)
 	c := &firmataImpl{serialPort, make([]int, 13)}
 	err = c.initialize()
 	if err != nil {
@@ -57,23 +96,6 @@ func newFirmata(port string) (firmata, error) {
 	}
 
 	return c, nil
-}
-
-func (mode pinMode) String() string {
-	switch mode {
-	case input:
-		return "INPUT"
-	case output:
-		return "OUTPUT"
-	case analog:
-		return "ANALOG"
-	case pwm:
-		return "PWM"
-	case servo:
-		return "SERVO"
-	default:
-		return "?"
-	}
 }
 
 func (c *firmataImpl) initialize() error {
@@ -85,7 +107,6 @@ func (c *firmataImpl) initialize() error {
 		cmd[0] = (byte)(cmdReportAnalog | i)
 		cmd[1] = 1
 
-		trace.Printf("report analog %d", i)
 		_, err := c.port.Write(cmd)
 		if err != nil {
 			log.Printf("Write error: %s", err)
@@ -103,7 +124,6 @@ func (c *firmataImpl) initialize() error {
 		cmd[0] = (byte)(cmdReportDigital | i)
 		cmd[1] = 1
 
-		trace.Printf("report digital %d", i)
 		_, err := c.port.Write(cmd)
 		if err != nil {
 			trace.Printf("Write error: %s", err)
@@ -126,7 +146,6 @@ func (c *firmataImpl) PinMode(pin int, mode pinMode) error {
 	cmd[1] = byte(pin)
 	cmd[2] = byte(mode)
 
-	trace.Printf("PinMode %d %s", pin, mode)
 	_, err := c.port.Write(cmd)
 	if err != nil {
 		trace.Printf("Write error: %s", err)
@@ -145,7 +164,7 @@ func (c *firmataImpl) PinMode(pin int, mode pinMode) error {
 func (c *firmataImpl) DigitalWrite(pin int, value bool) error {
 	portNumber := (pin >> 3) & 0x0F
 
-	if value {
+	if !value {
 		c.digitalOutData[portNumber] &= ^(1 << uint(pin&0x07))
 	} else {
 		c.digitalOutData[portNumber] |= (1 << uint(pin&0x07))
@@ -156,12 +175,6 @@ func (c *firmataImpl) DigitalWrite(pin int, value bool) error {
 	cmd[1] = byte(c.digitalOutData[portNumber] & 0x7F)
 	cmd[2] = (byte)(c.digitalOutData[portNumber] >> 7)
 
-	if value {
-		trace.Printf("DigitalWrite %d 1", pin)
-	} else {
-		trace.Printf("DigitalWrite %d 0", pin)
-	}
-
 	_, err := c.port.Write(cmd)
 	if err != nil {
 		trace.Printf("Write error: %s", err)
@@ -171,6 +184,16 @@ func (c *firmataImpl) DigitalWrite(pin int, value bool) error {
 	err = c.port.Flush()
 	if err != nil {
 		log.Printf("Flush error: %s", err)
+		return err
+	}
+
+	return nil
+}
+
+func (c *firmataImpl) Close() error {
+	err := c.port.Close()
+	if err != nil {
+		log.Printf("Close error: %s", err)
 		return err
 	}
 
