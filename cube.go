@@ -11,22 +11,36 @@ var trace = log.New(os.Stdout, "[go-cube] ", log.Ltime)
 var greenPins = [...]int{6, 10}
 var redPins = [...]int{5, 9}
 
+// BlinkMode defines option flags for cube blinkin mode
 type BlinkMode int
 
 const (
+	// BlinkFast enables fast blinking
 	BlinkFast BlinkMode = 0x01
+	// BlinkSlow enables slow blinking
 	BlinkSlow BlinkMode = 0x02
 
-	BlinkRed   BlinkMode = 0x10
+	// BlinkRed enables red LEDs blinking
+	BlinkRed BlinkMode = 0x10
+	// BlinkGreen enables green LEDs blinking
 	BlinkGreen BlinkMode = 0x20
 )
 
+// Cube is interface of Cube client
 type Cube interface {
+	// Off turns Cube off
 	Off() error
+
+	// Red turns Cube red
 	Red() error
+
+	// Green turns Cube green
 	Green() error
+
+	// Blink makes Cube blink several times
 	Blink(mode BlinkMode) error
 
+	// Close disconnects client from, Cube
 	Close()
 }
 
@@ -34,8 +48,10 @@ type cube struct {
 	fm firmata
 }
 
+// AutoDetectPort is a placeholder port name for Cube port auto detection
 const AutoDetectPort = autoDetectPort
 
+// NewCube creates new Cube client
 func NewCube(port string) (Cube, error) {
 	trace.Printf("Connecting to Cube...", port)
 	fm, err := newFirmata(port)
