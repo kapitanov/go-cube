@@ -1,6 +1,7 @@
 package cube
 
 import (
+	"io"
 	"log"
 	"os"
 	"time"
@@ -46,6 +47,11 @@ type Cube interface {
 
 type cube struct {
 	fm firmata
+}
+
+// SetLogWriter sets log writer for go-cube
+func SetLogWriter(w io.Writer) {
+	trace.SetOutput(w)
 }
 
 // AutoDetectPort is a placeholder port name for Cube port auto detection
